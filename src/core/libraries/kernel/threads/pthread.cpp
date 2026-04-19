@@ -197,7 +197,11 @@ int PS4_SYSV_ABI posix_pthread_detach(PthreadT pthread) {
     return 0;
 }
 
-static void RunThread(void* arg) {
+#ifdef WIN32
+static DWORD RunThread(void* arg) {
+#else
+static void* RunThread(void* arg) {
+#endif
     auto* curthread = static_cast<Pthread*>(arg);
     g_curthread = curthread;
     Common::SetCurrentThreadName(curthread->name.c_str());
@@ -208,12 +212,17 @@ static void RunThread(void* arg) {
 
     /* Run the current thread's start routine with argument: */
     auto* const stack =
-        (void*)((size_t)curthread->attr.stackaddr_attr + curthread->attr.stacksize_attr);
+        (void*)(((size_t)curthread->attr.stackaddr_attr + curthread->attr.stacksize_attr) & (~15));
     void* ret = _runOnAnotherStack(curthread->arg, (void*)curthread->start_routine, stack);
 
     /* Remove thread from tracking */
     DebugState.RemoveCurrentThreadFromGuestList();
     posix_pthread_exit(ret);
+#ifdef WIN32
+    return 0;
+#else
+    return nullptr;
+#endif
 }
 
 int PS4_SYSV_ABI posix_pthread_create_name_np(PthreadT* thread, const PthreadAttrT* attr,
