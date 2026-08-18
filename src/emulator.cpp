@@ -42,6 +42,7 @@
 #include "core/libraries/save_data/save_backup.h"
 #include "core/linker.h"
 #include "core/memory.h"
+#include "core/signals.h"
 #include "core/user_settings.h"
 #include "emulator.h"
 #include "video_core/cache_storage.h"
@@ -90,6 +91,7 @@ void Emulator::Shutdown() {
         return;
     }
     Common::Log::Flush();
+    Signals::Instance()->RemoveHandlers();
     if (controllers) {
         controllers->ResetLightbarColors();
         // need to give SDL time to do this before the runtime exits
@@ -465,10 +467,8 @@ void Emulator::Run(std::filesystem::path file, std::vector<std::string> args,
 
     game_info.game_folder = game_folder;
 
-    if (!mnt->Exists(guest_eboot_path)) {
-        LOG_CRITICAL(Loader, "eboot.bin does not exist: {}", guest_eboot_path);
-        std::quick_exit(0);
-    }
+    ASSERT_MSG(mnt->Exists(guest_eboot_path), "Guest app's main executable {} does not exist",
+               guest_eboot_path);
 
     LOG_INFO(Loader, "Starting shadps4 emulator v{} ", Common::g_version);
     LOG_INFO(Loader, "Revision {}", Common::g_scm_rev);
