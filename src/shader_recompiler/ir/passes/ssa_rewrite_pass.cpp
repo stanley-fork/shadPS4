@@ -66,8 +66,8 @@ struct ThreadBitScalar : FlagTag {
 };
 
 using Variant =
-    std::variant<IR::ScalarReg, IR::VectorReg, GotoVariable, MaskLaneVariable, ThreadBitScalar,
-                 SccFlagTag, ExecFlagTag, VccFlagTag, VccLoTag, VccHiTag, M0Tag>;
+    std::variant<IR::ScalarReg, IR::VectorReg, IR::VirtualReg, GotoVariable, MaskLaneVariable,
+                 ThreadBitScalar, SccFlagTag, ExecFlagTag, VccFlagTag, VccLoTag, VccHiTag, M0Tag>;
 using ValueMap = std::unordered_map<IR::Block*, IR::Value>;
 
 struct DefTable {
@@ -83,6 +83,13 @@ struct DefTable {
     }
     void SetDef(IR::Block* block, IR::VectorReg variable, const IR::Value& value) {
         block->ssa_vreg_values[RegIndex(variable)] = value;
+    }
+
+    const IR::Value& Def(IR::Block* block, IR::VirtualReg variable) {
+        return reg_vars[variable.Key()][block];
+    }
+    void SetDef(IR::Block* block, IR::VirtualReg variable, const IR::Value& value) {
+        reg_vars[variable.Key()].insert_or_assign(block, value);
     }
 
     const IR::Value& Def(IR::Block* block, GotoVariable variable) {
@@ -153,6 +160,7 @@ struct DefTable {
 
     std::unordered_map<u32, ValueMap> goto_vars;
     std::unordered_map<u32, ValueMap> mask_lane_vars;
+    std::unordered_map<u64, ValueMap> reg_vars;
     ValueMap scc_flag;
     ValueMap exec_flag;
     ValueMap vcc_flag;
@@ -184,6 +192,17 @@ constexpr IR::Opcode UndefOpcode(const M0Tag) noexcept {
 
 constexpr IR::Opcode UndefOpcode(const FlagTag) noexcept {
     return IR::Opcode::UndefU1;
+}
+
+constexpr IR::Opcode UndefOpcode(const IR::VirtualReg reg) noexcept {
+    switch (reg.type) {
+    case IR::Type::U32:
+        return IR::Opcode::UndefU32;
+    case IR::Type::U1:
+        return IR::Opcode::UndefU1;
+    default:
+        UNREACHABLE();
+    }
 }
 
 class Pass {
@@ -342,6 +361,9 @@ void VisitInst(Pass& pass, IR::Block* block, IR::Inst& inst) {
         pass.WriteVariable(reg, block, inst.Arg(1));
         break;
     }
+    case IR::Opcode::SetVirtualRegister:
+        pass.WriteVariable(inst.Arg(0).VirtualReg(), block, inst.Arg(1));
+        break;
     case IR::Opcode::SetGotoVariable:
         pass.WriteVariable(GotoVariable{inst.Arg(0).U32()}, block, inst.Arg(1));
         break;
@@ -385,6 +407,9 @@ void VisitInst(Pass& pass, IR::Block* block, IR::Inst& inst) {
         inst.ReplaceUsesWith(value);
         break;
     }
+    case IR::Opcode::GetVirtualRegister:
+        inst.ReplaceUsesWith(pass.ReadVariable(inst.Arg(0).VirtualReg(), block));
+        break;
     case IR::Opcode::GetGotoVariable:
         inst.ReplaceUsesWith(pass.ReadVariable(GotoVariable{inst.Arg(0).U32()}, block));
         break;
@@ -431,6 +456,32 @@ void SsaRewritePass(IR::Program& program) {
         VisitBlock(pass, *it);
     }
     pass.FinalizePhiCandidates();
+}
+
+void SsaDestroyPass(IR::Program& program) {
+    // This implements the following mesa function with place_writes_in_imm_preds = true
+    // https://gitlab.freedesktop.org/mesa/mesa/-/blob/55f62fa8/src/compiler/nir/nir_from_ssa.c#L1075
+    u32 reg_index{};
+    const auto end = program.post_order_blocks.rend();
+    for (auto it1 = program.post_order_blocks.rbegin(); it1 != end; ++it1) {
+        IR::Block* block = *it1;
+        for (auto it = block->begin(); it != block->end(); ++it) {
+            IR::Inst& inst = *it;
+            if (inst.GetOpcode() != IR::Opcode::Phi) {
+                continue;
+            }
+            const IR::VirtualReg reg{reg_index++, inst.Flags<IR::Type>()};
+            for (size_t arg_index = 0; arg_index < inst.NumArgs(); arg_index++) {
+                IR::Value arg = inst.Arg(arg_index);
+                IR::Block* arg_block = inst.PhiBlock(arg_index);
+                arg_block->PrependNewInst(arg_block->end(), IR::Opcode::SetVirtualRegister,
+                                          {IR::Value{reg}, arg});
+            }
+            IR::Inst* const new_inst{
+                &*block->PrependNewInst(it, IR::Opcode::GetVirtualRegister, {IR::Value{reg}})};
+            inst.ReplaceUsesWith(IR::Value{new_inst});
+        }
+    }
 }
 
 } // namespace Shader::Optimization
