@@ -764,6 +764,7 @@ void Rasterizer::BindBuffers(const Shader::Info& stage, Shader::Backend::Binding
                 const auto lds_size = cs_program.SharedMemSize() * cs_program.NumWorkgroups();
                 const auto [data, offset] = lds_buffer.Map(lds_size, alignment);
                 std::memset(data, 0, lds_size);
+                lds_buffer.Commit();
                 buffer_infos.emplace_back(lds_buffer.Handle(), offset, lds_size);
             } else {
                 UNREACHABLE_MSG("Unexpected buffer type {}", u32(desc.buffer_type));
@@ -949,7 +950,8 @@ void Rasterizer::BindTextures(const Shader::Info& stage, Shader::Backend::Bindin
 
     for (const auto& sampler : stage.samplers) {
         auto ssharp = sampler.GetSharp(stage);
-        const auto vk_sampler = texture_cache.GetSampler(ssharp, liverpool->regs.ta_bc_base);
+        const auto vk_sampler =
+            texture_cache.GetSampler(ssharp, liverpool->regs.ta_bc_base, sampler.is_depth);
         image_infos.emplace_back(vk_sampler, VK_NULL_HANDLE, vk::ImageLayout::eGeneral);
         auto& set_write = set_writes[set_write_index++];
         set_write.dstSet = VK_NULL_HANDLE;
@@ -1071,6 +1073,7 @@ RenderState Rasterizer::BeginRendering(const GraphicsPipeline* pipeline) {
         attachment.image_view = *image_view.image_view;
         attachment.image_layout = image.backing->state.layout;
         attachment.clear_value = {};
+        attachment.is_clear = 0;
 
         if (regs.depth_buffer.DepthValid()) {
             attachment.clear_value[0] = is_depth_clear ? std::bit_cast<u32>(regs.depth_clear) : 0u;

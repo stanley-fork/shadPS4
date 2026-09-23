@@ -168,6 +168,7 @@ const Shader::RuntimeInfo& PipelineCache::BuildRuntimeInfo(HwStage stage, SwStag
         info.hw.fs.en_flags = regs.ps_input_ena;
         info.hw.fs.addr_flags = regs.ps_input_addr;
         info.hw.fs.num_inputs = regs.num_interp;
+        info.hw.fs.front_face_all_bits = regs.barycentric_control.front_face_all_bits;
         info.hw.fs.z_export_format = regs.z_export_format;
         u8 stencil_ref_export_enable = regs.depth_shader_control.stencil_op_val_export_enable |
                                        regs.depth_shader_control.stencil_test_val_export_enable;
@@ -583,7 +584,8 @@ bool PipelineCache::RefreshGraphicsStages() {
         bind_stage(HwStage::Vertex, SwStage::Vertex);
         break;
     default:
-        UNREACHABLE_MSG("unhandled stage_en: {}", (u32)regs.stage_enable.raw);
+        LOG_WARNING(Render_Vulkan, "unimplemented shader stage {}", (u32)regs.stage_enable.raw);
+        return false;
     }
 
     const auto* vs_info = infos[static_cast<u32>(SwStage::Vertex)];

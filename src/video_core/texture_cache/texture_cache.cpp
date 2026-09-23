@@ -6,6 +6,7 @@
 #include "common/assert.h"
 #include "common/debug.h"
 #include "common/div_ceil.h"
+#include "common/hash.h"
 #include "common/scope_exit.h"
 #include "core/emulator_settings.h"
 #include "core/memory.h"
@@ -281,9 +282,17 @@ std::tuple<ImageId, int, int> TextureCache::ResolveOverlap(const ImageInfo& imag
             return {ExpandImage(image_info, cache_image_id), -1, -1};
         }
 
+        const bool pow2_padding_only =
+            image_info.props.is_pow2 != cache_image.info.props.is_pow2 &&
+            image_info.tile_mode == cache_image.info.tile_mode &&
+            image_info.size == cache_image.info.size &&
+            image_info.pitch == cache_image.info.pitch && image_info.resources.levels == 1 &&
+            cache_image.info.resources.levels == 1 && image_info.resources.layers == 1 &&
+            cache_image.info.resources.layers == 1;
+
         // Size and resources are less than or equal, use image view.
         if (image_info.pixel_format != cache_image.info.pixel_format ||
-            image_info.guest_size <= cache_image.info.guest_size) {
+            image_info.guest_size <= cache_image.info.guest_size || pow2_padding_only) {
             auto result_id = merged_image_id ? merged_image_id : cache_image_id;
             const auto& result_image = slot_images[result_id];
             const bool is_compatible =
@@ -766,11 +775,14 @@ void TextureCache::RefreshImage(Image& image) {
 }
 
 vk::Sampler TextureCache::GetSampler(const AmdGpu::Sampler& sampler,
-                                     AmdGpu::BorderColorBuffer border_color_base) {
-    const u64 hash = XXH3_64bits(&sampler, sizeof(sampler));
+                                     AmdGpu::BorderColorBuffer border_color_base,
+                                     const bool is_depth) {
+    // Compare and plain uses of one S# need separate samplers.
+    const u64 hash = HashCombine(XXH3_64bits(&sampler, sizeof(sampler)), is_depth);
 
     std::scoped_lock lock{samplers_mutex};
-    const auto [it, new_sampler] = samplers.try_emplace(hash, instance, sampler, border_color_base);
+    const auto [it, new_sampler] =
+        samplers.try_emplace(hash, instance, sampler, border_color_base, is_depth);
     if (new_sampler) {
         samplers.at(hash).lru_id = sampler_lru_cache.Insert(hash, gc_tick);
     } else {
