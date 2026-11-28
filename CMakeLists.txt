@@ -471,6 +471,7 @@ set(SYSTEM_LIBS src/core/libraries/system/commondialog.cpp
                 src/core/libraries/ngs2/ngs2_eq.h
                 src/core/libraries/ngs2/ngs2_mastering.cpp
                 src/core/libraries/ngs2/ngs2_mastering.h
+                src/core/libraries/ngs2/ngs2_runtime.h
                 src/core/libraries/ngs2/ngs2_sampler.cpp
                 src/core/libraries/ngs2/ngs2_sampler.h
                 src/core/libraries/ngs2/ngs2_submixer.cpp
@@ -479,6 +480,9 @@ set(SYSTEM_LIBS src/core/libraries/system/commondialog.cpp
                 src/core/libraries/audio3d/audio3d.cpp
                 src/core/libraries/audio3d/audio3d.h
                 src/core/libraries/audio3d/audio3d_error.h
+                src/core/libraries/audiodec/audiodec.cpp
+                src/core/libraries/audiodec/audiodec.h
+                src/core/libraries/audiodec/audiodec_error.h
                 src/core/libraries/game_live_streaming/gamelivestreaming.cpp
                 src/core/libraries/game_live_streaming/gamelivestreaming.h
                 src/core/libraries/remote_play/remoteplay.cpp
